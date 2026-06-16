@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --color-foret:     #1F3A2B;
+  --color-ivoire:    #F1EBD9;
+  --color-ivoire-2:  #FBF6E9;
+  --color-seal:      #7A1F2B;
+  --color-laiton:    #A8895C;
+  --color-ink:       #1F3A2B;
+  --color-ink-2:     #3f3a32;
+  --color-ink-3:     #7a7368;
+  --color-rule:      #d4cab0;
+  --color-rate-rate: #7A1F2B;
+  --color-rate-hard: #B8864A;
+  --color-rate-good: #4A6B57;
+  --color-rate-easy: #1F3A2B;
+}
+
+:root {
+  --foret:     #1F3A2B;
+  --ivoire:    #F1EBD9;
+  --ivoire-2:  #FBF6E9;
+  --seal:      #7A1F2B;
+  --laiton:    #A8895C;
+  --ink:       #1F3A2B;
+  --ink-2:     #3f3a32;
+  --ink-3:     #7a7368;
+  --rule:      #d4cab0;
+  --rate-rate: #7A1F2B;
+  --rate-hard: #B8864A;
+  --rate-good: #4A6B57;
+  --rate-easy: #1F3A2B;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Atkinson Hyperlegible', sans-serif;
+  font-size: 17px;
+  line-height: 1.7;
+  background-color: var(--ivoire);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: 'Fraunces', serif;
+  font-variation-settings: 'SOFT' 100, 'opsz' 144;
+}
+
+:focus-visible {
+  outline: 2px solid var(--laiton);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
