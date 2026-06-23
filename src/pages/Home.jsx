@@ -47,8 +47,9 @@ function parseCSV(text) {
 
     const front = parseField(sep)
     const back = parseField(sep)
+    const code = parseField(sep)
     while (pos < len && text[pos] !== '\n') pos++
-    if (front && back) cards.push({ front, back })
+    if (front && back) cards.push({ front, back, card_code: code || null })
   }
 
   return cards
@@ -63,9 +64,16 @@ async function parseExcel(buffer) {
   for (const row of rows) {
     const front = String(row[0] ?? '').trim()
     const back = String(row[1] ?? '').trim()
-    if (front && back) cards.push({ front, back })
+    const card_code = String(row[2] ?? '').trim() || null
+    if (front && back) cards.push({ front, back, card_code })
   }
   return cards
+}
+
+function extractCodeFromTitle(text) {
+  const match = text.match(/^\[([^\]]+)\]\s*/)
+  if (match) return { card_code: match[1], text: text.slice(match[0].length).trim() }
+  return { card_code: null, text }
 }
 
 async function parseWord(buffer) {
@@ -81,14 +89,16 @@ async function parseWord(buffer) {
 
   const cards = []
   let currentFront = null
+  let currentCode = null
   let backLines = []
 
   function flushCard() {
     if (currentFront && backLines.length > 0) {
-      cards.push({ front: currentFront, back: backLines.join('\n').trim() })
+      cards.push({ front: currentFront, back: backLines.join('\n').trim(), card_code: currentCode })
     }
     backLines = []
     currentFront = null
+    currentCode = null
   }
 
   for (const p of paragraphs) {
@@ -104,7 +114,11 @@ async function parseWord(buffer) {
 
     if (isHeading) {
       flushCard()
-      if (text) currentFront = text
+      if (text) {
+        const extracted = extractCodeFromTitle(text)
+        currentFront = extracted.text
+        currentCode = extracted.card_code
+      }
     } else if (currentFront !== null) {
       if (text === '---') backLines.push('---')
       else if (text) backLines.push(text)
@@ -152,9 +166,10 @@ async function parsePPTX(buffer) {
     const shapes = extractShapeTexts(xml)
     const titleShape = shapes.find(s => s.type === 'title' || s.type === 'ctrTitle')
     const bodyShapes = shapes.filter(s => s !== titleShape)
-    const front = titleShape ? titleShape.text : (shapes[0]?.text ?? '')
+    const rawTitle = titleShape ? titleShape.text : (shapes[0]?.text ?? '')
+    const { card_code, text: front } = extractCodeFromTitle(rawTitle)
     const back = bodyShapes.length > 0 ? bodyShapes.map(s => s.text).join('\n') : (shapes[1]?.text ?? '')
-    if (front && back) cards.push({ front, back })
+    if (front && back) cards.push({ front, back, card_code })
   }
   return cards
 }
@@ -165,10 +180,19 @@ const AI_PROMPTS = {
 STRUCTURE REQUISE :
 - Colonne A : question / recto de la carte
 - Colonne B : réponse / verso de la carte
+- Colonne C (optionnel) : code de liaison — pour lier des cartes portant sur le même item. Format : 1, 1.1, 1.2, 2, 2.1, etc. Les cartes du même groupe (même chiffre racine) apparaîtront ensemble et dans l'ordre pendant la révision.
 - Une carte par ligne, pas d'en-tête obligatoire
 
+CODES DE LIAISON :
+Assigne un code (colonne C) quand plusieurs cartes portent sur le même concept ou item.
+Exemple :
+| Colonne A | Colonne B | Colonne C |
+| Qu'est-ce que le goodwill ? | • Excédent du coût... | 1 |
+| Comment comptabiliser le goodwill ? | Débiter Goodwill... | 1.1 |
+| Quand le goodwill est-il déprécié ? | Lorsque la valeur... | 1.2 |
+
 SAUTS DE LIGNE DANS UNE CELLULE :
-Dans Excel, les sauts de ligne à l'intérieur d'une cellule se font avec Alt+Entrée. Dans le fichier .xlsx généré, ils apparaissent comme des retours à la ligne normaux dans la cellule.
+Dans Excel, les sauts de ligne à l'intérieur d'une cellule se font avec Alt+Entrée.
 
 BULLET POINTS :
 Commence chaque point par • ou - suivi d'un espace. Chaque point sur sa propre ligne (Alt+Entrée entre chaque).
@@ -194,16 +218,26 @@ MISE EN FORME :
 - Gras : **texte**
 - Les titres d'étapes en gras sont recommandés
 
-Reformate maintenant le fichier Excel fourni en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme.`,
+Reformate maintenant le fichier Excel fourni en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison (colonne C) quand plusieurs questions portent sur le même item ou concept.`,
 
   csv: `Tu vas reformater un fichier en CSV pour qu'il soit compatible avec l'application de flashcards FlashEFC.
 
 STRUCTURE REQUISE :
-- Deux colonnes séparées par une virgule ou un point-virgule
+- Deux ou trois colonnes séparées par une virgule ou un point-virgule
 - Colonne 1 : question / recto de la carte
 - Colonne 2 : réponse / verso de la carte
+- Colonne 3 (optionnel) : code de liaison — pour lier des cartes portant sur le même item. Format : 1, 1.1, 1.2, 2, 2.1, etc. Les cartes du même groupe apparaîtront ensemble et dans l'ordre pendant la révision.
 - Une carte par ligne, pas d'en-tête obligatoire
 - Les cellules contenant des sauts de ligne ou des virgules doivent être entourées de guillemets doubles
+
+CODES DE LIAISON :
+Assigne un code (3e colonne) quand plusieurs cartes portent sur le même concept ou item.
+Exemple :
+"Qu'est-ce que le goodwill ?","• Excédent du coût d'acquisition sur la JV des actifs nets
+• Comptabilisé uniquement lors d'un regroupement
+• Soumis à un test de dépréciation annuel","1"
+"Comment comptabiliser le goodwill à l'acquisition ?","Débiter Goodwill, Créditer Actifs nets acquis","1.1"
+"Quand le goodwill est-il déprécié ?","Lorsque la valeur recouvrable < valeur comptable — test annuel obligatoire","1.2"
 
 BULLET POINTS :
 Commence chaque point par • ou - suivi d'un espace, séparés par des sauts de ligne à l'intérieur de la cellule (la cellule doit être entre guillemets doubles).
@@ -230,7 +264,7 @@ MISE EN FORME :
 - Les titres d'étapes en gras sont recommandés
 - Encodage : UTF-8
 
-Génère maintenant le fichier CSV en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme.`,
+Génère maintenant le fichier CSV en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison (3e colonne) quand plusieurs questions portent sur le même item ou concept.`,
 
   word: `Tu vas reformater un document Word pour qu'il soit compatible avec l'application de flashcards FlashEFC.
 
@@ -238,6 +272,15 @@ STRUCTURE REQUISE :
 - Chaque carte commence par un titre en style "Titre 2" (Heading 2) → ce sera le recto (question)
 - Le texte en style "Normal" qui suit → ce sera le verso (réponse)
 - La prochaine ligne "Titre 2" démarre une nouvelle carte automatiquement
+
+CODES DE LIAISON :
+Pour lier des cartes portant sur le même item, préfixe le titre Titre 2 avec [code] suivi d'un espace.
+Les cartes du même groupe (même chiffre racine) apparaîtront ensemble et dans l'ordre pendant la révision.
+Exemple :
+[1] Qu'est-ce que le goodwill ?
+[1.1] Comment comptabiliser le goodwill à l'acquisition ?
+[1.2] Quand le goodwill est-il déprécié ?
+[2] Qu'est-ce qu'une provision ?
 
 BULLET POINTS :
 Utilise les listes à puces normales de Word. Chaque point sera converti automatiquement.
@@ -251,7 +294,7 @@ MISE EN FORME :
 - Ne pas utiliser Titre 1 (réservé au titre du document)
 - Encodage : UTF-8
 
-Reformate maintenant le document Word en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme.`,
+Reformate maintenant le document Word en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison [code] quand plusieurs questions portent sur le même item ou concept.`,
 
   pptx: `Tu vas reformater une présentation PowerPoint pour qu'elle soit compatible avec l'application de flashcards FlashEFC.
 
@@ -260,6 +303,15 @@ STRUCTURE REQUISE :
 - Titre de la slide → recto de la carte (question)
 - Contenu / corps de la slide → verso de la carte (réponse)
 - Les slides sans titre ou sans contenu seront ignorées
+
+CODES DE LIAISON :
+Pour lier des slides portant sur le même item, préfixe le titre de la slide avec [code] suivi d'un espace.
+Les cartes du même groupe (même chiffre racine) apparaîtront ensemble et dans l'ordre pendant la révision.
+Exemple de titres de slides :
+[1] Qu'est-ce que le goodwill ?
+[1.1] Comment comptabiliser le goodwill à l'acquisition ?
+[1.2] Quand le goodwill est-il déprécié ?
+[2] Qu'est-ce qu'une provision ?
 
 BULLET POINTS :
 Utilise les listes à puces normales de PowerPoint. Chaque point sera automatiquement converti en liste dans l'application.
@@ -271,7 +323,7 @@ MISE EN FORME :
 - Gras : **texte** ou utilise le gras natif de PowerPoint
 - Une seule zone de titre et une seule zone de contenu par slide
 
-Reformate maintenant la présentation PowerPoint en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme.`,
+Reformate maintenant la présentation PowerPoint en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison [code] dans les titres quand plusieurs slides portent sur le même item ou concept.`,
 }
 
 function CopyPromptBox() {
@@ -322,7 +374,12 @@ function CopyPromptBox() {
 function CardPreview({ card, index }) {
   return (
     <div className="bg-ivoire border border-rule rounded-2xl p-4" style={{ boxShadow: '0 12px 28px -16px rgba(28,24,20,0.18)' }}>
-      <p className="text-xs font-bold uppercase tracking-[2px] text-ink-3 mb-2">Carte {index + 1}</p>
+      <div className="flex items-center gap-2 mb-2">
+        <p className="text-xs font-bold uppercase tracking-[2px] text-ink-3">Carte {index + 1}</p>
+        {card.card_code && (
+          <span className="text-[10px] font-bold uppercase tracking-[1.5px] text-laiton border border-laiton/40 px-1.5 py-0.5 rounded-full">{card.card_code}</span>
+        )}
+      </div>
       <p className="font-bold text-ink text-sm leading-snug mb-2">{card.front}</p>
       <div className="border-t border-rule pt-2">
         <p className="text-xs text-ink-2 line-clamp-3">{card.back}</p>
@@ -385,7 +442,7 @@ function ImportModal({ onClose, onImported }) {
 
     if (deckErr) { setError('Erreur lors de la création du deck.'); setImporting(false); return }
 
-    const cardRows = preview.map(c => ({ deck_id: deck.id, front: c.front, back: c.back }))
+    const cardRows = preview.map(c => ({ deck_id: deck.id, front: c.front, back: c.back, card_code: c.card_code || null }))
     const { error: cardsErr } = await supabase.from('cards').insert(cardRows)
 
     if (cardsErr) { setError('Erreur lors de l\'import des cartes.'); setImporting(false); return }
