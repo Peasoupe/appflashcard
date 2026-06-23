@@ -18,6 +18,7 @@ export default function DeckDetail() {
   const [deckName, setDeckName] = useState('')
   const [front, setFront] = useState('')
   const [back, setBack] = useState('')
+  const [cardCode, setCardCode] = useState('')
   const [saving, setSaving] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [showPublishModal, setShowPublishModal] = useState(false)
@@ -59,13 +60,14 @@ export default function DeckDetail() {
     if (!front.trim() || !back.trim()) return
     setSaving(true)
 
+    const code = cardCode.trim() || null
     if (editingCard) {
-      await supabase.from('cards').update({ front: front.trim(), back: back.trim() }).eq('id', editingCard.id)
+      await supabase.from('cards').update({ front: front.trim(), back: back.trim(), card_code: code }).eq('id', editingCard.id)
     } else {
-      await supabase.from('cards').insert({ deck_id: id, front: front.trim(), back: back.trim() })
+      await supabase.from('cards').insert({ deck_id: id, front: front.trim(), back: back.trim(), card_code: code })
     }
 
-    setFront(''); setBack(''); setShowCardForm(false); setEditingCard(null)
+    setFront(''); setBack(''); setCardCode(''); setShowCardForm(false); setEditingCard(null)
     setSaving(false)
     fetchDeck()
   }
@@ -186,6 +188,7 @@ export default function DeckDetail() {
     setEditingCard(card)
     setFront(card.front)
     setBack(card.back)
+    setCardCode(card.card_code || '')
     setShowCardForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -195,6 +198,7 @@ export default function DeckDetail() {
     setEditingCard(null)
     setFront('')
     setBack('')
+    setCardCode('')
   }
 
   const today = new Date().toISOString().split('T')[0]
@@ -390,16 +394,27 @@ export default function DeckDetail() {
           <h3 className="text-xs font-bold uppercase tracking-[1.5px] text-ink-3">
             {editingCard ? 'Modifier la carte' : 'Nouvelle carte'}
           </h3>
-          <div>
-            <label className="block text-xs text-ink-3 mb-1">Recto (question)</label>
-            <textarea
-              autoFocus
-              value={front}
-              onChange={e => setFront(e.target.value)}
-              rows={2}
-              placeholder="Question…"
-              className="w-full border border-rule rounded-[14px] px-3 py-2 text-sm bg-ivoire focus:outline-none focus:border-foret transition-colors resize-none placeholder:text-ink-3"
-            />
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs text-ink-3 mb-1">Recto (question)</label>
+              <textarea
+                autoFocus
+                value={front}
+                onChange={e => setFront(e.target.value)}
+                rows={2}
+                placeholder="Question…"
+                className="w-full border border-rule rounded-[14px] px-3 py-2 text-sm bg-ivoire focus:outline-none focus:border-foret transition-colors resize-none placeholder:text-ink-3"
+              />
+            </div>
+            <div style={{ width: '80px' }}>
+              <label className="block text-xs text-ink-3 mb-1">Code</label>
+              <input
+                value={cardCode}
+                onChange={e => setCardCode(e.target.value)}
+                placeholder="1.1"
+                className="w-full border border-rule rounded-[14px] px-3 py-2 text-sm bg-ivoire focus:outline-none focus:border-foret transition-colors placeholder:text-ink-3"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-xs text-ink-3 mb-1">Verso (réponse)</label>
@@ -432,12 +447,35 @@ export default function DeckDetail() {
         </div>
       ) : (
         <div className="space-y-2">
-          {cards.map(card => {
+          {[...cards].sort((a, b) => {
+            if (!a.card_code && !b.card_code) return 0
+            if (!a.card_code) return 1
+            if (!b.card_code) return -1
+            const ap = a.card_code.split('.').map(Number)
+            const bp = b.card_code.split('.').map(Number)
+            for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
+              const d = (ap[i] ?? 0) - (bp[i] ?? 0)
+              if (d !== 0) return d
+            }
+            return 0
+          }).map((card, idx, sorted) => {
             const due = !card.next_review_date || card.next_review_date <= today
+            const isSub = card.card_code?.includes('.')
+            const prevRoot = sorted[idx - 1]?.card_code?.split('.')[0]
+            const currRoot = card.card_code?.split('.')[0]
+            const nextRoot = sorted[idx + 1]?.card_code?.split('.')[0]
+            const isGrouped = card.card_code && (prevRoot === currRoot || nextRoot === currRoot)
             return (
-              <div key={card.id} className="bg-ivoire-2 border border-rule rounded-2xl p-4 flex gap-4 hover:border-laiton transition-colors">
+              <div
+                key={card.id}
+                className={`bg-ivoire-2 border border-rule rounded-2xl p-4 flex gap-4 hover:border-laiton transition-colors ${isSub ? 'ml-6' : ''}`}
+                style={isGrouped ? { borderLeftColor: 'var(--laiton)', borderLeftWidth: '3px' } : {}}
+              >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-ink">{card.front}</p>
+                  {card.card_code && (
+                    <span className="text-[10px] font-bold uppercase tracking-[1.5px] text-laiton mr-2">{card.card_code}</span>
+                  )}
+                  <p className="text-sm font-bold text-ink inline">{card.front}</p>
                   <div className="text-sm text-ink-3 mt-1 line-clamp-2">
                     <CardRenderer content={card.back} />
                   </div>
@@ -447,20 +485,8 @@ export default function DeckDetail() {
                     ? <span className="text-xs font-bold uppercase tracking-[1px] text-seal">À réviser</span>
                     : <span className="text-xs text-ink-3">{card.next_review_date}</span>
                   }
-                  <button
-                    onClick={() => startEdit(card)}
-                    className="text-ink-3 hover:text-laiton transition-colors text-sm"
-                    title="Modifier"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => deleteCard(card.id)}
-                    className="text-ink-3 hover:text-seal transition-colors text-sm"
-                    title="Supprimer"
-                  >
-                    🗑️
-                  </button>
+                  <button onClick={() => startEdit(card)} className="text-ink-3 hover:text-laiton transition-colors text-sm" title="Modifier">✏️</button>
+                  <button onClick={() => deleteCard(card.id)} className="text-ink-3 hover:text-seal transition-colors text-sm" title="Supprimer">🗑️</button>
                 </div>
               </div>
             )

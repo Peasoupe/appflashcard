@@ -165,7 +165,31 @@ export default function Study() {
       filtered = due.length > 0 ? due : all
     }
 
-    setQueue(filtered.sort(() => Math.random() - 0.5))
+    const coded = filtered.filter(c => c.card_code)
+    const uncoded = filtered.filter(c => !c.card_code)
+
+    const groups = {}
+    for (const card of coded) {
+      const root = card.card_code.split('.')[0]
+      if (!groups[root]) groups[root] = []
+      groups[root].push(card)
+    }
+
+    const codeSort = (a, b) => {
+      const ap = a.card_code.split('.').map(Number)
+      const bp = b.card_code.split('.').map(Number)
+      for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
+        const d = (ap[i] ?? 0) - (bp[i] ?? 0)
+        if (d !== 0) return d
+      }
+      return 0
+    }
+
+    const shuffledGroups = Object.values(groups).sort(() => Math.random() - 0.5)
+    const orderedCoded = shuffledGroups.flatMap(g => g.sort(codeSort))
+    const shuffledUncoded = uncoded.sort(() => Math.random() - 0.5)
+
+    setQueue([...orderedCoded, ...shuffledUncoded])
     setLoading(false)
   }
 
