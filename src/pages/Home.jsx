@@ -452,14 +452,14 @@ function ImportModal({ onClose, onImported }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-ivoire-2 rounded-2xl w-full max-w-lg border border-rule" style={{ boxShadow: '0 12px 28px -16px rgba(28,24,20,0.18)' }}>
-        <div className="flex items-center justify-between p-5 border-b border-rule">
+    <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 px-4 py-6">
+      <div className="bg-ivoire-2 rounded-2xl w-full max-w-lg border border-rule flex flex-col" style={{ boxShadow: '0 12px 28px -16px rgba(28,24,20,0.18)', maxHeight: '90vh' }}>
+        <div className="flex items-center justify-between p-5 border-b border-rule flex-shrink-0">
           <h2 className="font-display font-semibold text-foret" style={{ fontSize: '22px' }}>Importer un fichier</h2>
           <button onClick={onClose} className="text-ink-3 hover:text-ink text-xl leading-none transition-colors">×</button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
           <div className="bg-ivoire border border-rule rounded-xl px-4 py-3 text-xs text-ink-3 space-y-1">
             <p className="font-bold text-ink-2 uppercase tracking-[1.5px] text-[11px]">Format attendu</p>
             <p>Excel (.xlsx) et CSV (.csv) : colonne A = question, colonne B = réponse.</p>
@@ -518,7 +518,7 @@ function ImportModal({ onClose, onImported }) {
           )}
         </div>
 
-        <div className="flex justify-end gap-3 p-5 border-t border-rule">
+        <div className="flex justify-end gap-3 p-5 border-t border-rule flex-shrink-0">
           <button onClick={onClose} className="text-sm px-4 py-2 text-ink-3 hover:text-ink transition-colors">
             Annuler
           </button>
