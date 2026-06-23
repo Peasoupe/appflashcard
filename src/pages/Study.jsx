@@ -5,6 +5,20 @@ import { useAuth } from '../contexts/AuthContext'
 import { sm2, isDue } from '../lib/sm2'
 import CardRenderer from '../components/CardRenderer'
 
+function parseMCQ(text) {
+  if (!/[•]\s*[A-E]\)/.test(text)) return null
+  const parts = text.split(/\s*•\s*(?=[A-E]\))/)
+  if (parts.length < 3) return null
+  const questionText = parts[0].trim()
+  const choices = parts.slice(1).map(part => {
+    const match = part.match(/^([A-E])\)\s*(.+)/)
+    return match ? { letter: match[1], text: match[2].trim() } : null
+  }).filter(Boolean)
+  if (choices.length < 2) return null
+  const isMultiple = /plusieurs/i.test(questionText)
+  return { questionText, choices, isMultiple }
+}
+
 const QUALITY_LABELS = [
   { q: 0, label: 'Raté',     sub: 'une fois encore', color: '--rate-rate' },
   { q: 3, label: 'Difficile', sub: 'avec effort',     color: '--rate-hard' },
@@ -114,6 +128,7 @@ export default function Study() {
 
   const [sessionDuration, setSessionDuration] = useState(null)
   const [sessionStart, setSessionStart] = useState(null)
+  const [selectedChoices, setSelectedChoices] = useState([])
 
   const handleQualityRef = useRef(null)
 
@@ -215,8 +230,20 @@ export default function Study() {
       setTimeout(() => {
         setCurrent(prev => prev + 1)
         setFlipped(false)
+        setSelectedChoices([])
         setTransitioning(false)
       }, 150)
+    }
+  }
+
+  function handleChoiceSelect(letter, isMultiple) {
+    if (isMultiple) {
+      setSelectedChoices(prev =>
+        prev.includes(letter) ? prev.filter(l => l !== letter) : [...prev, letter]
+      )
+    } else {
+      setSelectedChoices([letter])
+      flipCard()
     }
   }
 
@@ -363,49 +390,98 @@ export default function Study() {
       </div>
 
       {/* Flashcard */}
-      <div
-        onClick={() => { if (!flipped && !transitioning) flipCard() }}
-        className={`border rounded-2xl mb-6 cursor-pointer transition-all duration-300 ${
-          flipped ? 'border-laiton cursor-default' : 'border-rule hover:border-laiton'
-        }`}
-        style={{
+      {(() => {
+        const mcq = parseMCQ(card.front)
+        const cardStyle = {
           backgroundColor: 'var(--ivoire-2)',
-          minHeight: '420px',
           boxShadow: '0 12px 28px -16px rgba(28,24,20,0.18)',
           opacity: transitioning ? 0 : 1,
           transform: transitioning ? 'scale(0.98)' : 'scale(1)',
           transition: 'opacity 150ms ease-out, transform 150ms ease-out, border-color 200ms',
-        }}
-      >
-        {!flipped ? (
-          <div className="flex flex-col items-center justify-center text-center p-10 h-full" style={{ minHeight: '420px' }}>
-            <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-6">Question</p>
-            <p
-              className="font-display font-semibold text-foret"
-              style={{ fontSize: '28px', lineHeight: '1.4' }}
-            >
-              {card.front}
-            </p>
-            <p className="text-xs text-ink-3 mt-8">Espace · Cliquez pour révéler</p>
-          </div>
-        ) : (
-          <div className="p-8 w-full">
-            <div className="text-center mb-6">
-              <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-3">Question</p>
-              <p className="text-ink-3 text-sm leading-relaxed">{card.front}</p>
-            </div>
-            <div className="border-t border-rule pt-6">
-              <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-4 text-center">Réponse</p>
+        }
+
+        if (mcq && !flipped) {
+          return (
+            <div className="mb-6">
               <div
-                className="text-ink-2 leading-relaxed"
-                style={{ fontSize: '20px', lineHeight: '1.7' }}
+                className="border border-rule rounded-2xl p-8 mb-3"
+                style={cardStyle}
               >
-                <CardRenderer content={card.back} />
+                <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-5 text-center">Question</p>
+                <p className="font-display font-semibold text-foret text-center mb-6" style={{ fontSize: '24px', lineHeight: '1.4' }}>
+                  {mcq.questionText}
+                </p>
+                <div className="space-y-2">
+                  {mcq.choices.map(choice => (
+                    <button
+                      key={choice.letter}
+                      onClick={() => handleChoiceSelect(choice.letter, mcq.isMultiple)}
+                      className={`w-full text-left border rounded-[14px] px-4 py-3 text-sm transition-all ${
+                        selectedChoices.includes(choice.letter)
+                          ? 'border-foret bg-foret/8 text-foret font-bold'
+                          : 'border-rule hover:border-laiton text-ink'
+                      }`}
+                    >
+                      <span className="font-bold mr-2">{choice.letter})</span>{choice.text}
+                    </button>
+                  ))}
+                </div>
+                {mcq.isMultiple && selectedChoices.length > 0 && (
+                  <button
+                    onClick={flipCard}
+                    className="mt-5 w-full bg-foret text-ivoire rounded-[18px] py-3 text-sm font-bold hover:brightness-90 transition-all"
+                  >
+                    Vérifier ma sélection
+                  </button>
+                )}
+                {!mcq.isMultiple && (
+                  <p className="text-xs text-ink-3 mt-5 text-center">Cliquez un choix pour révéler</p>
+                )}
               </div>
             </div>
+          )
+        }
+
+        return (
+          <div
+            onClick={() => { if (!flipped && !mcq && !transitioning) flipCard() }}
+            className={`border rounded-2xl mb-6 transition-all duration-300 ${
+              flipped ? 'border-laiton' : 'border-rule hover:border-laiton'
+            } ${!flipped && !mcq ? 'cursor-pointer' : 'cursor-default'}`}
+            style={{ ...cardStyle, minHeight: '420px' }}
+          >
+            {!flipped ? (
+              <div className="flex flex-col items-center justify-center text-center p-10 h-full" style={{ minHeight: '420px' }}>
+                <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-6">Question</p>
+                <p className="font-display font-semibold text-foret" style={{ fontSize: '28px', lineHeight: '1.4' }}>
+                  {card.front}
+                </p>
+                <p className="text-xs text-ink-3 mt-8">Espace · Cliquez pour révéler</p>
+              </div>
+            ) : (
+              <div className="p-8 w-full">
+                <div className="text-center mb-6">
+                  <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-3">Question</p>
+                  <p className="text-ink-3 text-sm leading-relaxed">
+                    {mcq ? mcq.questionText : card.front}
+                  </p>
+                  {mcq && selectedChoices.length > 0 && (
+                    <p className="text-xs font-bold text-laiton mt-2">
+                      Votre réponse : {selectedChoices.sort().join(', ')}
+                    </p>
+                  )}
+                </div>
+                <div className="border-t border-rule pt-6">
+                  <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-4 text-center">Réponse</p>
+                  <div className="text-ink-2 leading-relaxed" style={{ fontSize: '20px', lineHeight: '1.7' }}>
+                    <CardRenderer content={card.back} />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        )
+      })()}
 
       {/* Rating buttons */}
       {flipped && (
