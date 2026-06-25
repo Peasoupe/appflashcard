@@ -152,6 +152,8 @@ export default function Study() {
 
   useEffect(() => {
     function handleKey(e) {
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault()
         if (!flipped && !transitioning) flipCard()
