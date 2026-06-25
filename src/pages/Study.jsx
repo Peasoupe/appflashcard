@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { sm2, isDue } from '../lib/sm2'
 import CardRenderer from '../components/CardRenderer'
+import CardEditor from '../components/CardEditor'
 
 function parseMCQ(text) {
   if (!/[•]\s*[A-E]\)/.test(text)) return null
@@ -129,6 +130,10 @@ export default function Study() {
   const [sessionDuration, setSessionDuration] = useState(null)
   const [sessionStart, setSessionStart] = useState(null)
   const [selectedChoices, setSelectedChoices] = useState([])
+  const [showEdit, setShowEdit] = useState(false)
+  const [editFront, setEditFront] = useState('')
+  const [editBack, setEditBack] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
 
   const handleQualityRef = useRef(null)
 
@@ -234,6 +239,24 @@ export default function Study() {
         setTransitioning(false)
       }, 150)
     }
+  }
+
+  function openEdit() {
+    const card = queue[current]
+    setEditFront(card.front)
+    setEditBack(card.back)
+    setShowEdit(true)
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault()
+    if (!editFront.trim() || !editBack.trim()) return
+    setEditSaving(true)
+    const card = queue[current]
+    await supabase.from('cards').update({ front: editFront.trim(), back: editBack.trim() }).eq('id', card.id)
+    setQueue(prev => prev.map((c, i) => i === current ? { ...c, front: editFront.trim(), back: editBack.trim() } : c))
+    setShowEdit(false)
+    setEditSaving(false)
   }
 
   function handleChoiceSelect(letter, isMultiple) {
@@ -366,6 +389,46 @@ export default function Study() {
 
   return (
     <div className="max-w-[720px] mx-auto px-4 w-full" style={{ paddingTop: '40px', paddingBottom: '60px' }}>
+
+      {/* Edit modal */}
+      {showEdit && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-ivoire-2 rounded-2xl w-full max-w-lg border border-rule" style={{ boxShadow: '0 12px 28px -16px rgba(28,24,20,0.18)' }}>
+            <div className="flex items-center justify-between p-5 border-b border-rule">
+              <h2 className="font-display font-semibold text-foret" style={{ fontSize: '20px' }}>Modifier la carte</h2>
+              <button onClick={() => setShowEdit(false)} className="text-ink-3 hover:text-ink text-xl leading-none transition-colors">×</button>
+            </div>
+            <form onSubmit={saveEdit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs text-ink-3 mb-1">Recto (question)</label>
+                <textarea
+                  value={editFront}
+                  onChange={e => setEditFront(e.target.value)}
+                  rows={3}
+                  className="w-full border border-rule rounded-[14px] px-3 py-2 text-sm bg-ivoire focus:outline-none focus:border-foret transition-colors resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-3 mb-1">Verso (réponse)</label>
+                <CardEditor value={editBack} onChange={setEditBack} />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="submit"
+                  disabled={editSaving || !editFront.trim() || !editBack.trim()}
+                  className="bg-foret text-ivoire text-sm px-5 py-2.5 rounded-[18px] hover:brightness-90 disabled:opacity-40 transition-all font-bold"
+                >
+                  {editSaving ? 'Sauvegarde…' : 'Sauvegarder'}
+                </button>
+                <button type="button" onClick={() => setShowEdit(false)} className="text-sm px-3 py-2 text-ink-3 hover:text-ink transition-colors">
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Session timer */}
       {sessionDuration > 0 && (
         <SessionTimer durationMin={sessionDuration} startTime={sessionStart} />
@@ -376,8 +439,15 @@ export default function Study() {
         <Link to={`/decks/${id}`} className="text-[11px] font-bold uppercase tracking-[2px] text-ink-3 hover:text-ink transition-colors">
           ← {deck?.name}
         </Link>
-        <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-[2px] text-ink-3">
+        <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-[2px] text-ink-3">
           <span>{current + 1} / {queue.length}</span>
+          <button
+            onClick={openEdit}
+            className="text-ink-3 hover:text-laiton transition-colors"
+            title="Modifier la carte"
+          >
+            ✏️
+          </button>
         </div>
       </div>
 
