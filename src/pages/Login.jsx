@@ -68,6 +68,11 @@ export default function Login() {
           </div>
           <OAuthButtons />
           <p className="text-sm text-center text-ink-3">
+            <Link to="/forgot-password" className="text-laiton hover:text-foret transition-colors font-bold">
+              Mot de passe oublié ?
+            </Link>
+          </p>
+          <p className="text-sm text-center text-ink-3">
             Pas de compte ?{' '}
             <Link to="/register" className="text-laiton hover:text-foret transition-colors font-bold">
               Créer un compte
