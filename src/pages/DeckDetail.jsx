@@ -78,6 +78,11 @@ export default function DeckDetail() {
     setCards(prev => prev.filter(c => c.id !== cardId))
   }
 
+  async function toggleFlag(cardId, current) {
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, flagged: !current } : c))
+    await supabase.from('cards').update({ flagged: !current }).eq('id', cardId)
+  }
+
   async function saveDeckName(e) {
     e.preventDefault()
     if (!deckName.trim()) return
@@ -465,11 +470,14 @@ export default function DeckDetail() {
             const currRoot = card.card_code?.split('.')[0]
             const nextRoot = sorted[idx + 1]?.card_code?.split('.')[0]
             const isGrouped = card.card_code && (prevRoot === currRoot || nextRoot === currRoot)
+            const flagStyle = card.flagged
+              ? { backgroundColor: 'rgba(180,50,40,0.07)', borderColor: 'rgba(180,50,40,0.35)' }
+              : isGrouped ? { borderLeftColor: 'var(--laiton)', borderLeftWidth: '3px' } : {}
             return (
               <div
                 key={card.id}
-                className={`bg-ivoire-2 border border-rule rounded-2xl p-4 flex gap-4 hover:border-laiton transition-colors ${isSub ? 'ml-6' : ''}`}
-                style={isGrouped ? { borderLeftColor: 'var(--laiton)', borderLeftWidth: '3px' } : {}}
+                className={`border rounded-2xl p-4 flex gap-4 transition-colors ${isSub ? 'ml-6' : ''} ${card.flagged ? 'hover:border-seal/50' : 'bg-ivoire-2 border-rule hover:border-laiton'}`}
+                style={flagStyle}
               >
                 <div className="flex-1 min-w-0">
                   {card.card_code && (
@@ -485,6 +493,26 @@ export default function DeckDetail() {
                     ? <span className="text-xs font-bold uppercase tracking-[1px] text-seal">À réviser</span>
                     : <span className="text-xs text-ink-3">{card.next_review_date}</span>
                   }
+                  <label
+                    title="Marquer à revoir"
+                    className="flex items-center cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!card.flagged}
+                      onChange={() => toggleFlag(card.id, !!card.flagged)}
+                      className="sr-only"
+                    />
+                    <span
+                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors text-[10px] ${
+                        card.flagged
+                          ? 'bg-seal/20 border-seal/60 text-seal'
+                          : 'border-rule text-transparent hover:border-seal/40'
+                      }`}
+                    >
+                      ✓
+                    </span>
+                  </label>
                   <button onClick={() => startEdit(card)} className="text-ink-3 hover:text-laiton transition-colors text-sm" title="Modifier">✏️</button>
                   <button onClick={() => deleteCard(card.id)} className="text-ink-3 hover:text-seal transition-colors text-sm" title="Supprimer">🗑️</button>
                 </div>
