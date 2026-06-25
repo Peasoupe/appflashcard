@@ -6,18 +6,26 @@ import { sm2, isDue } from '../lib/sm2'
 import CardRenderer from '../components/CardRenderer'
 import CardEditor from '../components/CardEditor'
 
+const CHOICE_LETTERS = ['A', 'B', 'C', 'D', 'E']
+
 function parseMCQ(text) {
-  if (!/[•]\s*[A-E]\)/.test(text)) return null
-  const parts = text.split(/\s*•\s*(?=[A-E]\))/)
+  if (!/[•]\s*[A-E][✓]?\)/.test(text)) return null
+  const parts = text.split(/\s*•\s*(?=[A-E][✓]?\))/)
   if (parts.length < 3) return null
   const questionText = parts[0].trim()
   const choices = parts.slice(1).map(part => {
-    const match = part.match(/^([A-E])\)\s*(.+)/)
-    return match ? { letter: match[1], text: match[2].trim() } : null
+    const match = part.match(/^([A-E])(✓?)\)\s*(.+)/)
+    return match ? { letter: match[1], isCorrect: match[2] === '✓', text: match[3].trim() } : null
   }).filter(Boolean)
   if (choices.length < 2) return null
   const isMultiple = /plusieurs/i.test(questionText)
-  return { questionText, choices, isMultiple }
+  const hasCorrectMarked = choices.some(c => c.isCorrect)
+  return { questionText, choices, isMultiple, hasCorrectMarked }
+}
+
+function buildMCQFront(questionText, choices) {
+  const parts = choices.map((c, i) => `• ${CHOICE_LETTERS[i]}${c.isCorrect ? '✓' : ''}) ${c.text.trim()}`)
+  return questionText.trim() + ' ' + parts.join(' ')
 }
 
 const QUALITY_LABELS = [
@@ -130,8 +138,11 @@ export default function Study() {
   const [sessionDuration, setSessionDuration] = useState(null)
   const [sessionStart, setSessionStart] = useState(null)
   const [selectedChoices, setSelectedChoices] = useState([])
+  const [editMode, setEditMode] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [editFront, setEditFront] = useState('')
+  const [editQuestion, setEditQuestion] = useState('')
+  const [editChoices, setEditChoices] = useState([])
   const [editBack, setEditBack] = useState('')
   const [editSaving, setEditSaving] = useState(false)
 
@@ -236,6 +247,7 @@ export default function Study() {
         setCurrent(prev => prev + 1)
         setFlipped(false)
         setSelectedChoices([])
+        setEditMode(false)
         setTransitioning(false)
       }, 150)
     }
@@ -243,9 +255,28 @@ export default function Study() {
 
   function openEdit() {
     const card = queue[current]
-    setEditFront(card.front)
-    setEditBack(card.back)
-    setShowEdit(true)
+    const mcq = parseMCQ(card.front)
+    if (mcq) {
+      setEditQuestion(mcq.questionText)
+      setEditChoices(mcq.choices.map(c => ({ text: c.text, isCorrect: c.isCorrect })))
+      setEditBack(card.back)
+      setEditMode(true)
+    } else {
+      setEditFront(card.front)
+      setEditBack(card.back)
+      setShowEdit(true)
+    }
+  }
+
+  async function saveEditMCQ() {
+    if (!editQuestion.trim() || editChoices.some(c => !c.text.trim())) return
+    setEditSaving(true)
+    const newFront = buildMCQFront(editQuestion, editChoices)
+    const card = queue[current]
+    await supabase.from('cards').update({ front: newFront, back: editBack.trim() }).eq('id', card.id)
+    setQueue(prev => prev.map((c, i) => i === current ? { ...c, front: newFront, back: editBack.trim() } : c))
+    setEditMode(false)
+    setEditSaving(false)
   }
 
   async function saveEdit(e) {
@@ -470,54 +501,169 @@ export default function Study() {
           transition: 'opacity 150ms ease-out, transform 150ms ease-out, border-color 200ms',
         }
 
-        if (mcq && !flipped) {
+        // ── MCQ inline edit mode ──────────────────────────────────────
+        if (mcq && editMode) {
           return (
-            <div className="mb-6">
-              <div
-                className="border border-rule rounded-2xl p-8 mb-3"
-                style={cardStyle}
-              >
-                <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-5 text-center">Question</p>
-                <p className="font-display font-semibold text-foret text-center mb-6" style={{ fontSize: '24px', lineHeight: '1.4' }}>
-                  {mcq.questionText}
-                </p>
-                <div className="space-y-2">
-                  {mcq.choices.map(choice => (
-                    <button
-                      key={choice.letter}
-                      onClick={() => handleChoiceSelect(choice.letter, mcq.isMultiple)}
-                      className={`w-full text-left border rounded-[14px] px-4 py-3 text-sm transition-all ${
-                        selectedChoices.includes(choice.letter)
-                          ? 'border-foret bg-foret/8 text-foret font-bold'
-                          : 'border-rule hover:border-laiton text-ink'
-                      }`}
-                    >
-                      <span className="font-bold mr-2">{choice.letter})</span>{choice.text}
-                    </button>
-                  ))}
-                </div>
-                {mcq.isMultiple && selectedChoices.length > 0 && (
-                  <button
-                    onClick={flipCard}
-                    className="mt-5 w-full bg-foret text-ivoire rounded-[18px] py-3 text-sm font-bold hover:brightness-90 transition-all"
-                  >
-                    Vérifier ma sélection
-                  </button>
-                )}
-                {!mcq.isMultiple && (
-                  <p className="text-xs text-ink-3 mt-5 text-center">Cliquez un choix pour révéler</p>
-                )}
+            <div className="border border-laiton rounded-2xl p-6 mb-6" style={cardStyle}>
+              <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-laiton mb-4">Modifier la question</p>
+
+              <textarea
+                value={editQuestion}
+                onChange={e => setEditQuestion(e.target.value)}
+                rows={2}
+                className="w-full border border-rule rounded-[14px] px-3 py-2 text-sm bg-ivoire focus:outline-none focus:border-foret transition-colors resize-none mb-4"
+                placeholder="Texte de la question…"
+              />
+
+              <div className="space-y-2 mb-3">
+                {editChoices.map((choice, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-laiton w-6 shrink-0 text-right">{CHOICE_LETTERS[idx]})</span>
+                    <input
+                      value={choice.text}
+                      onChange={e => setEditChoices(prev => prev.map((c, i) => i === idx ? { ...c, text: e.target.value } : c))}
+                      className="flex-1 border border-rule rounded-[10px] px-3 py-2 text-sm bg-ivoire focus:outline-none focus:border-foret transition-colors"
+                      placeholder={`Choix ${CHOICE_LETTERS[idx]}…`}
+                    />
+                    <label className="flex items-center gap-1 shrink-0 cursor-pointer select-none" title="Bonne réponse">
+                      <input
+                        type="checkbox"
+                        checked={choice.isCorrect}
+                        onChange={e => setEditChoices(prev => prev.map((c, i) => i === idx ? { ...c, isCorrect: e.target.checked } : c))}
+                        className="accent-foret w-4 h-4"
+                      />
+                      <span className="text-xs text-ink-3">✓</span>
+                    </label>
+                    {editChoices.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditChoices(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-seal hover:brightness-75 text-lg leading-none shrink-0 transition-colors"
+                        title="Supprimer ce choix"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {editChoices.length < 5 && (
+                <button
+                  type="button"
+                  onClick={() => setEditChoices(prev => [...prev, { text: '', isCorrect: false }])}
+                  className="text-xs font-bold text-laiton hover:text-foret transition-colors mb-4 block"
+                >
+                  + Ajouter une réponse
+                </button>
+              )}
+
+              <div className="border-t border-rule pt-4 mt-2">
+                <p className="text-xs text-ink-3 mb-2">Explication (verso)</p>
+                <CardEditor value={editBack} onChange={setEditBack} />
+              </div>
+
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={saveEditMCQ}
+                  disabled={editSaving || !editQuestion.trim() || editChoices.some(c => !c.text.trim())}
+                  className="bg-foret text-ivoire text-sm px-5 py-2.5 rounded-[18px] hover:brightness-90 disabled:opacity-40 transition-all font-bold"
+                >
+                  {editSaving ? 'Sauvegarde…' : 'Sauvegarder'}
+                </button>
+                <button type="button" onClick={() => setEditMode(false)} className="text-sm px-3 py-2 text-ink-3 hover:text-ink transition-colors">
+                  Annuler
+                </button>
               </div>
             </div>
           )
         }
 
+        // ── MCQ question view ─────────────────────────────────────────
+        if (mcq && !flipped) {
+          return (
+            <div className="border border-rule rounded-2xl p-8 mb-6" style={cardStyle}>
+              <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-5 text-center">Question</p>
+              <p className="font-display font-semibold text-foret text-center mb-6" style={{ fontSize: '24px', lineHeight: '1.4' }}>
+                {mcq.questionText}
+              </p>
+              <div className="space-y-2">
+                {mcq.choices.map(choice => (
+                  <button
+                    key={choice.letter}
+                    onClick={() => handleChoiceSelect(choice.letter, mcq.isMultiple)}
+                    className={`w-full text-left border rounded-[14px] px-4 py-3 text-sm transition-all ${
+                      selectedChoices.includes(choice.letter)
+                        ? 'border-foret bg-foret/10 text-foret font-bold'
+                        : 'border-rule hover:border-laiton text-ink'
+                    }`}
+                  >
+                    <span className="font-bold mr-2">{choice.letter})</span>{choice.text}
+                  </button>
+                ))}
+              </div>
+              {mcq.isMultiple && selectedChoices.length > 0 && (
+                <button
+                  onClick={flipCard}
+                  className="mt-5 w-full bg-foret text-ivoire rounded-[18px] py-3 text-sm font-bold hover:brightness-90 transition-all"
+                >
+                  Vérifier ma sélection
+                </button>
+              )}
+              {!mcq.isMultiple && (
+                <p className="text-xs text-ink-3 mt-5 text-center">Cliquez un choix pour révéler</p>
+              )}
+            </div>
+          )
+        }
+
+        // ── Flipped MCQ view ──────────────────────────────────────────
+        if (mcq && flipped) {
+          return (
+            <div className="border border-laiton rounded-2xl p-8 mb-6" style={cardStyle}>
+              <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-3 text-center">Question</p>
+              <p className="text-ink-3 text-sm text-center mb-5">{mcq.questionText}</p>
+
+              {/* Choices with correct/incorrect highlighting */}
+              <div className="space-y-2 mb-6">
+                {mcq.choices.map(choice => {
+                  const selected = selectedChoices.includes(choice.letter)
+                  const showResult = mcq.hasCorrectMarked
+                  let cls = 'border-rule text-ink-3'
+                  if (showResult) {
+                    if (choice.isCorrect && selected) cls = 'border-rate-good bg-rate-good/10 text-rate-good font-bold'
+                    else if (choice.isCorrect && !selected) cls = 'border-rate-good/50 bg-rate-good/5 text-rate-good'
+                    else if (!choice.isCorrect && selected) cls = 'border-seal bg-seal/10 text-seal font-bold'
+                  } else if (selected) {
+                    cls = 'border-laiton bg-laiton/10 text-laiton font-bold'
+                  }
+                  return (
+                    <div key={choice.letter} className={`w-full border rounded-[14px] px-4 py-3 text-sm ${cls}`}>
+                      <span className="font-bold mr-2">{choice.letter})</span>{choice.text}
+                      {showResult && choice.isCorrect && <span className="ml-2 text-rate-good">✓</span>}
+                      {showResult && !choice.isCorrect && selected && <span className="ml-2 text-seal">✗</span>}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="border-t border-rule pt-6">
+                <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-4 text-center">Explication</p>
+                <div className="text-ink-2 leading-relaxed" style={{ fontSize: '18px', lineHeight: '1.7' }}>
+                  <CardRenderer content={card.back} />
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        // ── Normal card view ──────────────────────────────────────────
         return (
           <div
-            onClick={() => { if (!flipped && !mcq && !transitioning) flipCard() }}
+            onClick={() => { if (!flipped && !transitioning) flipCard() }}
             className={`border rounded-2xl mb-6 transition-all duration-300 ${
-              flipped ? 'border-laiton' : 'border-rule hover:border-laiton'
-            } ${!flipped && !mcq ? 'cursor-pointer' : 'cursor-default'}`}
+              flipped ? 'border-laiton cursor-default' : 'border-rule hover:border-laiton cursor-pointer'
+            }`}
             style={{ ...cardStyle, minHeight: '420px' }}
           >
             {!flipped ? (
@@ -532,14 +678,7 @@ export default function Study() {
               <div className="p-8 w-full">
                 <div className="text-center mb-6">
                   <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-3">Question</p>
-                  <p className="text-ink-3 text-sm leading-relaxed">
-                    {mcq ? mcq.questionText : card.front}
-                  </p>
-                  {mcq && selectedChoices.length > 0 && (
-                    <p className="text-xs font-bold text-laiton mt-2">
-                      Votre réponse : {selectedChoices.sort().join(', ')}
-                    </p>
-                  )}
+                  <p className="text-ink-3 text-sm leading-relaxed">{card.front}</p>
                 </div>
                 <div className="border-t border-rule pt-6">
                   <p className="text-[11px] font-bold uppercase tracking-[2.5px] text-ink-3 mb-4 text-center">Réponse</p>
