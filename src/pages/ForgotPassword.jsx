@@ -16,7 +16,11 @@ export default function ForgotPassword() {
       redirectTo: `${window.location.origin}/reset-password`,
     })
     if (error) {
-      setError(error.message)
+      setError(
+        error.message.toLowerCase().includes('rate limit')
+          ? 'Trop de tentatives. Veuillez attendre quelques minutes avant de réessayer.'
+          : error.message
+      )
       setLoading(false)
     } else {
       setSent(true)
