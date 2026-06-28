@@ -1,6 +1,7 @@
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { useAuth } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
 
@@ -22,6 +23,15 @@ function PageLoader() {
   )
 }
 
+function RecoveryRedirect() {
+  const { recovery } = useAuth()
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (recovery) navigate('/reset-password', { replace: true })
+  }, [recovery])
+  return null
+}
+
 function Layout({ children }) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -35,6 +45,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <RecoveryRedirect />
         <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<Login />} />
