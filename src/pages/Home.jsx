@@ -218,6 +218,10 @@ MISE EN FORME :
 - Gras : **texte**
 - Les titres d'étapes en gras sont recommandés
 
+DÉCOUPAGE PAR NORME (IFRS / IAS) :
+Quand le contenu couvre plusieurs normes, commence chaque question (colonne A) par la norme en gras suivie de — , par exemple : **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
+L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
+
 Reformate maintenant le fichier Excel fourni en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison (colonne C) quand plusieurs questions portent sur le même item ou concept.`,
 
   csv: `Tu vas reformater un fichier en CSV pour qu'il soit compatible avec l'application de flashcards FlashEFC.
@@ -264,6 +268,10 @@ MISE EN FORME :
 - Les titres d'étapes en gras sont recommandés
 - Encodage : UTF-8
 
+DÉCOUPAGE PAR NORME (IFRS / IAS) :
+Quand le contenu couvre plusieurs normes, commence chaque question (1re colonne) par la norme en gras suivie de — , par exemple : **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
+L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
+
 Génère maintenant le fichier CSV en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison (3e colonne) quand plusieurs questions portent sur le même item ou concept.`,
 
   word: `Tu vas reformater un document Word pour qu'il soit compatible avec l'application de flashcards FlashEFC.
@@ -294,6 +302,10 @@ MISE EN FORME :
 - Ne pas utiliser Titre 1 (réservé au titre du document)
 - Encodage : UTF-8
 
+DÉCOUPAGE PAR NORME (IFRS / IAS) :
+Quand le contenu couvre plusieurs normes, commence chaque titre Titre 2 (après le [code] éventuel) par la norme en gras suivie de — , par exemple : [1] **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
+L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
+
 Reformate maintenant le document Word en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison [code] quand plusieurs questions portent sur le même item ou concept.`,
 
   pptx: `Tu vas reformater une présentation PowerPoint pour qu'elle soit compatible avec l'application de flashcards FlashEFC.
@@ -322,6 +334,10 @@ Pour diviser le verso en plusieurs étapes, place le texte --- seul sur une lign
 MISE EN FORME :
 - Gras : **texte** ou utilise le gras natif de PowerPoint
 - Une seule zone de titre et une seule zone de contenu par slide
+
+DÉCOUPAGE PAR NORME (IFRS / IAS) :
+Quand le contenu couvre plusieurs normes, commence chaque titre de slide (après le [code] éventuel) par la norme en gras suivie de — , par exemple : [1] **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
+L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
 
 Reformate maintenant la présentation PowerPoint en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison [code] dans les titres quand plusieurs slides portent sur le même item ou concept.`,
 }
@@ -388,13 +404,38 @@ function CardPreview({ card, index }) {
   )
 }
 
+// Detect an IFRS/IAS standard anywhere in the card front (e.g. "**IFRS 15** — ...").
+function detectNorm(text) {
+  const m = (text || '').match(/\b(IFRS|IAS)\s*(\d+)\b/i)
+  return m ? `${m[1].toUpperCase()} ${m[2]}` : null
+}
+
 function ImportModal({ onClose, onImported }) {
   const { user } = useAuth()
   const fileRef = useRef()
   const [deckName, setDeckName] = useState('')
+  const [collectionName, setCollectionName] = useState('IFRS')
+  const [splitMode, setSplitMode] = useState('single') // 'single' | 'norm'
   const [preview, setPreview] = useState(null)
   const [error, setError] = useState('')
   const [importing, setImporting] = useState(false)
+
+  // Group parsed cards by detected norm (cards without a norm go to "Autres").
+  const normGroups = useMemo(() => {
+    if (!preview) return []
+    const map = new Map()
+    for (const c of preview) {
+      const norm = detectNorm(c.front) || 'Autres'
+      if (!map.has(norm)) map.set(norm, [])
+      map.get(norm).push(c)
+    }
+    return [...map.entries()]
+      .map(([norm, cards]) => ({ norm, cards }))
+      .sort((a, b) => a.norm.localeCompare(b.norm, 'fr', { numeric: true }))
+  }, [preview])
+
+  const modeTabClass = (m) =>
+    `px-3 py-1.5 transition-colors ${splitMode === m ? 'bg-foret text-ivoire' : 'bg-ivoire-2 text-ink-2 hover:bg-rule/40'}`
 
   function handleFile(e) {
     const file = e.target.files[0]
@@ -420,6 +461,9 @@ function ImportModal({ onClose, onImported }) {
           setPreview(null)
         } else {
           setPreview(cards)
+          // Auto-pick split mode when the file clearly spans several standards.
+          const realNorms = new Set(cards.map(c => detectNorm(c.front)).filter(Boolean))
+          setSplitMode(realNorms.size >= 2 ? 'norm' : 'single')
         }
       } catch {
         setError('Erreur lors de la lecture du fichier.')
@@ -431,8 +475,43 @@ function ImportModal({ onClose, onImported }) {
   }
 
   async function handleImport() {
-    if (!deckName.trim() || !preview?.length) return
+    if (!preview?.length) return
     setImporting(true)
+
+    // Split mode: one collection, one deck per detected norm.
+    if (splitMode === 'norm') {
+      if (!collectionName.trim()) { setImporting(false); return }
+
+      const { data: collection, error: colErr } = await supabase
+        .from('collections')
+        .insert({ name: collectionName.trim(), user_id: user.id })
+        .select()
+        .single()
+
+      if (colErr) { setError('Erreur lors de la création de la collection.'); setImporting(false); return }
+
+      for (const group of normGroups) {
+        const { data: deck, error: deckErr } = await supabase
+          .from('decks')
+          .insert({ name: group.norm, user_id: user.id, collection_id: collection.id })
+          .select()
+          .single()
+
+        if (deckErr) { setError('Erreur lors de la création d\'un deck.'); setImporting(false); return }
+
+        const rows = group.cards.map(c => ({ deck_id: deck.id, front: c.front, back: c.back, card_code: c.card_code || null }))
+        const { error: cardsErr } = await supabase.from('cards').insert(rows)
+
+        if (cardsErr) { setError('Erreur lors de l\'import des cartes.'); setImporting(false); return }
+      }
+
+      onImported()
+      onClose()
+      return
+    }
+
+    // Single-deck mode.
+    if (!deckName.trim()) { setImporting(false); return }
 
     const { data: deck, error: deckErr } = await supabase
       .from('decks')
@@ -487,15 +566,59 @@ function ImportModal({ onClose, onImported }) {
           )}
 
           {preview && (
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-[1.5px] text-ink-3 mb-2">
-                Nom du deck
-              </label>
-              <input
-                value={deckName}
-                onChange={e => setDeckName(e.target.value)}
-                className="w-full border-b border-rule bg-transparent text-ink text-sm py-1.5 focus:outline-none focus:border-foret transition-colors"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[1.5px] text-ink-3 mb-2">
+                  Mode d'import
+                </label>
+                <div className="flex rounded-lg overflow-hidden border border-rule text-xs w-fit">
+                  <button type="button" onClick={() => setSplitMode('single')} className={modeTabClass('single')}>
+                    Un seul deck
+                  </button>
+                  <button type="button" onClick={() => setSplitMode('norm')} className={modeTabClass('norm')}>
+                    Découper par norme
+                  </button>
+                </div>
+              </div>
+
+              {splitMode === 'single' ? (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[1.5px] text-ink-3 mb-2">
+                    Nom du deck
+                  </label>
+                  <input
+                    value={deckName}
+                    onChange={e => setDeckName(e.target.value)}
+                    className="w-full border-b border-rule bg-transparent text-ink text-sm py-1.5 focus:outline-none focus:border-foret transition-colors"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-[1.5px] text-ink-3 mb-2">
+                      Nom de la collection
+                    </label>
+                    <input
+                      value={collectionName}
+                      onChange={e => setCollectionName(e.target.value)}
+                      placeholder="IFRS"
+                      className="w-full border-b border-rule bg-transparent text-ink text-sm py-1.5 focus:outline-none focus:border-foret transition-colors placeholder:text-ink-3"
+                    />
+                  </div>
+                  <div className="bg-ivoire border border-rule rounded-xl px-4 py-3">
+                    <p className="font-bold text-ink-2 uppercase tracking-[1.5px] text-[11px] mb-2">
+                      {normGroups.length} deck{normGroups.length !== 1 ? 's' : ''} seront créé{normGroups.length !== 1 ? 's' : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {normGroups.map(g => (
+                        <span key={g.norm} className="text-xs border border-rule rounded-full px-2 py-0.5 text-ink-2">
+                          {g.norm} · {g.cards.length}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -524,10 +647,14 @@ function ImportModal({ onClose, onImported }) {
           </button>
           <button
             onClick={handleImport}
-            disabled={importing || !preview?.length || !deckName.trim()}
+            disabled={importing || !preview?.length || (splitMode === 'single' ? !deckName.trim() : !collectionName.trim())}
             className="bg-foret text-ivoire text-sm px-5 py-2 rounded-[18px] hover:brightness-90 disabled:opacity-40 transition-all font-bold"
           >
-            {importing ? 'Import en cours…' : `Importer ${preview?.length ?? ''} cartes`}
+            {importing
+              ? 'Import en cours…'
+              : splitMode === 'norm'
+                ? `Importer dans ${normGroups.length} deck${normGroups.length !== 1 ? 's' : ''}`
+                : `Importer ${preview?.length ?? ''} cartes`}
           </button>
         </div>
       </div>
