@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { ADMIN_EMAIL } from '../lib/admin'
 import NotificationBell from './NotificationBell'
 
 function LogoMark({ size = 32 }) {
@@ -23,7 +22,7 @@ function LogoMark({ size = 32 }) {
 }
 
 export default function Navbar() {
-  const { user, signOut } = useAuth()
+  const { user, isAdmin, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -59,7 +58,7 @@ export default function Navbar() {
             <Link to="/library" className={linkClass('/library')}>
               Bibliothèque
             </Link>
-            {user.email === ADMIN_EMAIL && (
+            {isAdmin && (
               <Link to="/admin" className={linkClass('/admin')}>
                 Admin
               </Link>

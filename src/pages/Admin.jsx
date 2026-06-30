@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { ADMIN_EMAIL } from '../lib/admin'
 
 export default function Admin() {
-  const { user } = useAuth()
+  const { isAdmin, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -15,9 +14,10 @@ export default function Admin() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (user?.email !== ADMIN_EMAIL) { navigate('/'); return }
+    if (authLoading) return
+    if (!isAdmin) { navigate('/'); return }
     fetchNotifications()
-  }, [user])
+  }, [isAdmin, authLoading])
 
   async function fetchNotifications() {
     setLoading(true)
@@ -52,7 +52,7 @@ export default function Admin() {
     setNotifications(prev => prev.filter(n => n.id !== id))
   }
 
-  if (user?.email !== ADMIN_EMAIL) return null
+  if (authLoading || !isAdmin) return null
 
   return (
     <div className="max-w-2xl mx-auto px-4 w-full" style={{ paddingTop: '48px', paddingBottom: '80px' }}>
