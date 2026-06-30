@@ -567,31 +567,96 @@ function WeeklyChart() {
   )
 }
 
+function DeckCard({ deck }) {
+  return (
+    <div
+      className="bg-ivoire-2 border border-rule rounded-2xl p-6 hover:border-laiton transition-colors"
+      style={{ boxShadow: '0 12px 28px -16px rgba(28,24,20,0.18)' }}
+    >
+      <div className="flex items-start justify-between mb-1">
+        <Link to={`/decks/${deck.id}`}>
+          <h3 className="font-display font-semibold text-foret hover:text-laiton transition-colors" style={{ fontSize: '22px', lineHeight: '1.1' }}>
+            {deck.name}
+          </h3>
+        </Link>
+        {deck.due > 0 && (
+          <span className="text-[11px] font-bold uppercase tracking-[1.5px] text-seal border border-seal/40 px-2 py-0.5 rounded-full ml-3 shrink-0">
+            {deck.due} à réviser
+          </span>
+        )}
+      </div>
+      <p className="text-xs font-bold uppercase tracking-[2px] text-ink-3 mb-4">
+        {deck.cardCount} carte{deck.cardCount !== 1 ? 's' : ''} · {deck.mastered} maîtrisée{deck.mastered !== 1 ? 's' : ''}
+      </p>
+
+      {deck.cardCount > 0 && (
+        <div className="bg-rule rounded-full h-px mb-4">
+          <div
+            className="bg-foret h-px rounded-full transition-all"
+            style={{ width: `${Math.round((deck.mastered / deck.cardCount) * 100)}%` }}
+          />
+        </div>
+      )}
+
+      <Link
+        to={`/study/${deck.id}`}
+        className="inline-block bg-foret text-ivoire text-xs font-bold uppercase tracking-[1px] px-4 py-2 rounded-[18px] hover:brightness-90 transition-all"
+      >
+        Étudier
+      </Link>
+    </div>
+  )
+}
+
 export default function Home() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [decks, setDecks] = useState([])
+  const [collections, setCollections] = useState([])
   const [loading, setLoading] = useState(true)
   const stats = useMemo(() => ({
     total: decks.reduce((a, d) => a + d.cardCount, 0),
     due: decks.reduce((a, d) => a + d.due, 0),
     mastered: decks.reduce((a, d) => a + d.mastered, 0),
   }), [decks])
+  const grouped = useMemo(() => {
+    const byId = new Map(collections.map(c => [c.id, { ...c, decks: [] }]))
+    const uncategorized = []
+    for (const deck of decks) {
+      if (deck.collection_id && byId.has(deck.collection_id)) byId.get(deck.collection_id).decks.push(deck)
+      else uncategorized.push(deck)
+    }
+    const sortByName = (a, b) => a.name.localeCompare(b.name, 'fr', { numeric: true })
+    const sections = [...byId.values()]
+      .map(c => ({ ...c, decks: [...c.decks].sort(sortByName) }))
+      .sort(sortByName)
+    return { sections, uncategorized }
+  }, [decks, collections])
   const [newDeckName, setNewDeckName] = useState('')
   const [creating, setCreating] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [newCollectionName, setNewCollectionName] = useState('')
+  const [creatingCollection, setCreatingCollection] = useState(false)
+  const [showCollectionForm, setShowCollectionForm] = useState(false)
 
   useEffect(() => { fetchDecks() }, [])
 
   async function fetchDecks() {
     setLoading(true)
-    const { data } = await supabase
-      .from('decks')
-      .select('*, cards(id, next_review_date, repetitions)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+    const [{ data }, { data: cols }] = await Promise.all([
+      supabase
+        .from('decks')
+        .select('*, cards(id, next_review_date, repetitions)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('collections')
+        .select('id, name')
+        .eq('user_id', user.id),
+    ])
 
+    setCollections(cols || [])
     if (data) {
       const today = new Date().toISOString().split('T')[0]
       const processed = data.map(deck => {
@@ -613,6 +678,23 @@ export default function Home() {
     setNewDeckName('')
     setShowForm(false)
     setCreating(false)
+    fetchDecks()
+  }
+
+  async function createCollection(e) {
+    e.preventDefault()
+    if (!newCollectionName.trim()) return
+    setCreatingCollection(true)
+    await supabase.from('collections').insert({ name: newCollectionName.trim(), user_id: user.id })
+    setNewCollectionName('')
+    setShowCollectionForm(false)
+    setCreatingCollection(false)
+    fetchDecks()
+  }
+
+  async function deleteCollection(id) {
+    if (!confirm('Supprimer cette collection ? Les decks seront conservés et simplement déclassés.')) return
+    await supabase.from('collections').delete().eq('id', id)
     fetchDecks()
   }
 
@@ -684,7 +766,41 @@ export default function Home() {
         >
           + Nouveau deck
         </button>
+        <button
+          onClick={() => setShowCollectionForm(!showCollectionForm)}
+          className="border border-foret text-foret text-sm px-4 py-2.5 rounded-[18px] hover:bg-foret/5 transition-colors font-bold"
+        >
+          + Nouvelle collection
+        </button>
       </div>
+
+      {/* New collection form */}
+      {showCollectionForm && (
+        <form onSubmit={createCollection} className="bg-ivoire-2 border border-rule rounded-2xl p-5 mb-6 flex gap-3">
+          <input
+            autoFocus
+            type="text"
+            value={newCollectionName}
+            onChange={e => setNewCollectionName(e.target.value)}
+            placeholder="Nom de la collection… (ex. IFRS, Fiscalité)"
+            className="flex-1 border-b border-rule bg-transparent text-ink text-sm py-1.5 focus:outline-none focus:border-foret transition-colors placeholder:text-ink-3"
+          />
+          <button
+            type="submit"
+            disabled={creatingCollection || !newCollectionName.trim()}
+            className="bg-foret text-ivoire text-sm px-4 py-2 rounded-[18px] hover:brightness-90 disabled:opacity-40 transition-all font-bold"
+          >
+            Créer
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCollectionForm(false)}
+            className="text-sm px-3 py-2 text-ink-3 hover:text-ink transition-colors"
+          >
+            Annuler
+          </button>
+        </form>
+      )}
 
       {/* New deck form */}
       {showForm && (
@@ -714,54 +830,56 @@ export default function Home() {
         </form>
       )}
 
-      {/* Deck list */}
+      {/* Deck list, grouped by collection */}
       {decks.length === 0 ? (
         <div className="text-center py-20 text-ink-3">
           <p className="font-display text-2xl mb-3" style={{ fontStyle: 'italic' }}>Collection vide.</p>
           <p className="text-sm">Créez votre premier deck ou importez un fichier Excel, CSV, PowerPoint ou Word.</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {decks.map(deck => (
-            <div
-              key={deck.id}
-              className="bg-ivoire-2 border border-rule rounded-2xl p-6 hover:border-laiton transition-colors"
-              style={{ boxShadow: '0 12px 28px -16px rgba(28,24,20,0.18)' }}
-            >
-              <div className="flex items-start justify-between mb-1">
-                <Link to={`/decks/${deck.id}`}>
-                  <h3 className="font-display font-semibold text-foret hover:text-laiton transition-colors" style={{ fontSize: '22px', lineHeight: '1.1' }}>
-                    {deck.name}
-                  </h3>
-                </Link>
-                {deck.due > 0 && (
-                  <span className="text-[11px] font-bold uppercase tracking-[1.5px] text-seal border border-seal/40 px-2 py-0.5 rounded-full ml-3 shrink-0">
-                    {deck.due} à réviser
-                  </span>
-                )}
+        <>
+          {grouped.sections.map(col => (
+            <section key={col.id} className="mb-10">
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="font-display font-semibold text-foret" style={{ fontSize: '28px', lineHeight: '1.1' }}>
+                  {col.name}
+                </h2>
+                <span className="text-xs font-bold uppercase tracking-[1.5px] text-ink-3">
+                  {col.decks.length} deck{col.decks.length !== 1 ? 's' : ''}
+                </span>
+                <button
+                  onClick={() => deleteCollection(col.id)}
+                  className="ml-auto text-xs text-ink-3 hover:text-seal transition-colors"
+                  title="Supprimer la collection (les decks sont conservés)"
+                >
+                  Supprimer
+                </button>
               </div>
-              <p className="text-xs font-bold uppercase tracking-[2px] text-ink-3 mb-4">
-                {deck.cardCount} carte{deck.cardCount !== 1 ? 's' : ''} · {deck.mastered} maîtrisée{deck.mastered !== 1 ? 's' : ''}
-              </p>
-
-              {deck.cardCount > 0 && (
-                <div className="bg-rule rounded-full h-px mb-4">
-                  <div
-                    className="bg-foret h-px rounded-full transition-all"
-                    style={{ width: `${Math.round((deck.mastered / deck.cardCount) * 100)}%` }}
-                  />
+              {col.decks.length === 0 ? (
+                <p className="text-sm text-ink-3 mb-2" style={{ fontStyle: 'italic' }}>
+                  Aucun deck dans cette collection.
+                </p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {col.decks.map(deck => <DeckCard key={deck.id} deck={deck} />)}
                 </div>
               )}
-
-              <Link
-                to={`/study/${deck.id}`}
-                className="inline-block bg-foret text-ivoire text-xs font-bold uppercase tracking-[1px] px-4 py-2 rounded-[18px] hover:brightness-90 transition-all"
-              >
-                Étudier
-              </Link>
-            </div>
+            </section>
           ))}
-        </div>
+
+          {grouped.uncategorized.length > 0 && (
+            <section className="mb-10">
+              {grouped.sections.length > 0 && (
+                <h2 className="font-display font-semibold text-foret mb-4" style={{ fontSize: '28px', lineHeight: '1.1' }}>
+                  Autres decks
+                </h2>
+              )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {grouped.uncategorized.map(deck => <DeckCard key={deck.id} deck={deck} />)}
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   )

@@ -11,6 +11,7 @@ export default function DeckDetail() {
   const navigate = useNavigate()
   const [deck, setDeck] = useState(null)
   const [cards, setCards] = useState([])
+  const [collections, setCollections] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCardForm, setShowCardForm] = useState(false)
   const [editingCard, setEditingCard] = useState(null)
@@ -28,6 +29,17 @@ export default function DeckDetail() {
   const exportMenuRef = useRef(null)
 
   useEffect(() => { fetchDeck() }, [id, user.id])
+
+  useEffect(() => {
+    supabase.from('collections').select('id, name').eq('user_id', user.id).order('name')
+      .then(({ data }) => setCollections(data || []))
+  }, [user.id])
+
+  async function changeCollection(collectionId) {
+    const value = collectionId || null
+    await supabase.from('decks').update({ collection_id: value }).eq('id', id)
+    setDeck(prev => ({ ...prev, collection_id: value }))
+  }
 
   useEffect(() => {
     if (!showExportMenu) return
@@ -338,6 +350,19 @@ export default function DeckDetail() {
           <p className="text-xs font-bold uppercase tracking-[2px] text-ink-3 mt-1">
             {cards.length} carte{cards.length !== 1 ? 's' : ''}
           </p>
+          <div className="flex items-center gap-2 mt-3">
+            <label className="text-xs font-bold uppercase tracking-[1.5px] text-ink-3">Collection</label>
+            <select
+              value={deck.collection_id || ''}
+              onChange={e => changeCollection(e.target.value)}
+              className="border border-rule rounded-[14px] bg-ivoire text-ink text-sm px-3 py-1.5 focus:outline-none focus:border-foret transition-colors"
+            >
+              <option value="">Sans collection</option>
+              {collections.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex gap-2 flex-shrink-0">
