@@ -218,9 +218,9 @@ MISE EN FORME :
 - Gras : **texte**
 - Les titres d'étapes en gras sont recommandés
 
-DÉCOUPAGE PAR NORME (IFRS / IAS) :
-Quand le contenu couvre plusieurs normes, commence chaque question (colonne A) par la norme en gras suivie de — , par exemple : **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
-L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
+DÉCOUPAGE PAR NORME / CHAPITRE (IFRS / IAS / NCECF) :
+Quand le contenu couvre plusieurs normes, commence chaque question (colonne A) par la norme en gras suivie de — , par exemple : **IFRS 15** — Quels sont les critères d'identification d'un contrat ? (Pour le NCECF, utilise le chapitre, ex. **NCECF 3400** — …)
+L'application peut alors découper automatiquement l'import en un deck par norme ou chapitre, regroupés dans une collection.
 
 Reformate maintenant le fichier Excel fourni en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison (colonne C) quand plusieurs questions portent sur le même item ou concept.`,
 
@@ -268,9 +268,9 @@ MISE EN FORME :
 - Les titres d'étapes en gras sont recommandés
 - Encodage : UTF-8
 
-DÉCOUPAGE PAR NORME (IFRS / IAS) :
-Quand le contenu couvre plusieurs normes, commence chaque question (1re colonne) par la norme en gras suivie de — , par exemple : **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
-L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
+DÉCOUPAGE PAR NORME / CHAPITRE (IFRS / IAS / NCECF) :
+Quand le contenu couvre plusieurs normes, commence chaque question (1re colonne) par la norme en gras suivie de — , par exemple : **IFRS 15** — Quels sont les critères d'identification d'un contrat ? (Pour le NCECF, utilise le chapitre, ex. **NCECF 3400** — …)
+L'application peut alors découper automatiquement l'import en un deck par norme ou chapitre, regroupés dans une collection.
 
 Génère maintenant le fichier CSV en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison (3e colonne) quand plusieurs questions portent sur le même item ou concept.`,
 
@@ -302,9 +302,9 @@ MISE EN FORME :
 - Ne pas utiliser Titre 1 (réservé au titre du document)
 - Encodage : UTF-8
 
-DÉCOUPAGE PAR NORME (IFRS / IAS) :
-Quand le contenu couvre plusieurs normes, commence chaque titre Titre 2 (après le [code] éventuel) par la norme en gras suivie de — , par exemple : [1] **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
-L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
+DÉCOUPAGE PAR NORME / CHAPITRE (IFRS / IAS / NCECF) :
+Quand le contenu couvre plusieurs normes, commence chaque titre Titre 2 (après le [code] éventuel) par la norme en gras suivie de — , par exemple : [1] **IFRS 15** — Quels sont les critères d'identification d'un contrat ? (Pour le NCECF, utilise le chapitre, ex. **NCECF 3400** — …)
+L'application peut alors découper automatiquement l'import en un deck par norme ou chapitre, regroupés dans une collection.
 
 Reformate maintenant le document Word en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison [code] quand plusieurs questions portent sur le même item ou concept.`,
 
@@ -335,9 +335,9 @@ MISE EN FORME :
 - Gras : **texte** ou utilise le gras natif de PowerPoint
 - Une seule zone de titre et une seule zone de contenu par slide
 
-DÉCOUPAGE PAR NORME (IFRS / IAS) :
-Quand le contenu couvre plusieurs normes, commence chaque titre de slide (après le [code] éventuel) par la norme en gras suivie de — , par exemple : [1] **IFRS 15** — Quels sont les critères d'identification d'un contrat ?
-L'application peut alors découper automatiquement l'import en un deck par norme, regroupés dans une collection.
+DÉCOUPAGE PAR NORME / CHAPITRE (IFRS / IAS / NCECF) :
+Quand le contenu couvre plusieurs normes, commence chaque titre de slide (après le [code] éventuel) par la norme en gras suivie de — , par exemple : [1] **IFRS 15** — Quels sont les critères d'identification d'un contrat ? (Pour le NCECF, utilise le chapitre, ex. **NCECF 3400** — …)
+L'application peut alors découper automatiquement l'import en un deck par norme ou chapitre, regroupés dans une collection.
 
 Reformate maintenant la présentation PowerPoint en respectant ces règles. Conserve le contenu original, adapte uniquement la structure et la mise en forme. Utilise les codes de liaison [code] dans les titres quand plusieurs slides portent sur le même item ou concept.`,
 }
@@ -404,9 +404,15 @@ function CardPreview({ card, index }) {
   )
 }
 
-// Detect an IFRS/IAS standard anywhere in the card front (e.g. "**IFRS 15** — ...").
+// Detect the accounting standard / chapter a card belongs to, from its front.
+// Primary: a leading bold label that includes a number — works for any family
+// (e.g. "**IFRS 15** — …", "**IAS 36** — …", "**NCECF 3400** — …").
+// Fallback: known families (IFRS / IAS / NCECF) anywhere in the text.
 function detectNorm(text) {
-  const m = (text || '').match(/\b(IFRS|IAS)\s*(\d+)\b/i)
+  const t = (text || '').trim()
+  const lead = t.match(/^\*\*\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .]*?)\s+(\d+[A-Za-z]?)\s*\*\*/)
+  if (lead) return `${lead[1]} ${lead[2]}`.replace(/\s+/g, ' ').toUpperCase()
+  const m = t.match(/\b(IFRS|IAS|NCECF)\s*(\d+)\b/i)
   return m ? `${m[1].toUpperCase()} ${m[2]}` : null
 }
 
